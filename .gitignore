@@ -27,7 +27,7 @@ backend/static/dashboard/
 
 # PyInstaller output
 dist/
-build/
+build_tmp/
 
 # IDE
 .vscode/
