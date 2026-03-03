@@ -22,6 +22,16 @@ class RedisBus:
         self._client: aioredis.Redis | None = None
 
     async def connect(self) -> None:
+        if self._url == "embedded":
+            try:
+                import fakeredis.aioredis as fakeredis_aio
+                self._client = fakeredis_aio.FakeRedis(
+                    encoding="utf-8", decode_responses=True
+                )
+                logger.info("RedisBus: using embedded in-memory store (fakeredis)")
+                return
+            except ImportError:
+                logger.warning("fakeredis not installed — falling back to real Redis")
         self._client = await aioredis.from_url(
             self._url,
             encoding="utf-8",

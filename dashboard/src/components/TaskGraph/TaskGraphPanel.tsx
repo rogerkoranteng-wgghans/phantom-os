@@ -6,7 +6,6 @@ import ReactFlow, {
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import type { Node, Edge } from 'reactflow'
-import clsx from 'clsx'
 
 interface Props {
   nodes: Node[]
@@ -115,7 +114,7 @@ export default function TaskGraphPanel({ nodes, edges }: Props) {
           maskColor="rgba(10,10,15,0.7)"
           style={{ background: '#12121a', border: '1px solid #1e1e2e' }}
         />
-        <Controls style={{ button: { background: '#12121a', border: '1px solid #1e1e2e', color: '#e2e8f0' } }} />
+        <Controls style={{ background: '#12121a', border: '1px solid #1e1e2e', color: '#e2e8f0' }} />
       </ReactFlow>
     </div>
   )

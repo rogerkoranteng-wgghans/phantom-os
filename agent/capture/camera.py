@@ -31,16 +31,43 @@ class CameraCapture:
         self._available = False
 
         if CV2_AVAILABLE:
+            self._available = self._probe_camera()
+
+    def _probe_camera(self) -> bool:
+        """Try to open the camera and read one frame. Returns True only if both succeed."""
+        import threading
+        result = [False]
+
+        def _try():
             try:
-                cap = cv2.VideoCapture(0)
-                if cap.isOpened():
-                    self._available = True
+                # Suppress noisy V4L2 stderr messages during probe
+                import os, sys
+                devnull = open(os.devnull, "w")
+                old_stderr_fd = os.dup(2)
+                os.dup2(devnull.fileno(), 2)
+                try:
+                    cap = cv2.VideoCapture(0)
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    if cap.isOpened():
+                        ret, _ = cap.read()
+                        result[0] = ret
                     cap.release()
-                    logger.info("CameraCapture: camera detected")
-                else:
-                    logger.info("CameraCapture: no camera found — emotion detection disabled")
-            except Exception as e:
-                logger.info(f"CameraCapture: camera init failed ({e})")
+                finally:
+                    os.dup2(old_stderr_fd, 2)
+                    os.close(old_stderr_fd)
+                    devnull.close()
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_try, daemon=True)
+        t.start()
+        t.join(timeout=3.0)  # give it 3 s max — V4L2 hangs longer than this
+
+        if result[0]:
+            logger.info("CameraCapture: camera detected")
+        else:
+            logger.info("CameraCapture: no usable camera — emotion detection disabled")
+        return result[0]
 
     @property
     def available(self) -> bool:

@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Workflow, Play, Trash2, ChevronDown, ChevronRight, Zap } from 'lucide-react'
 import { format } from 'date-fns'
-import clsx from 'clsx'
 import type { Workflow as WorkflowType } from '../types'
 
 async function fetchWorkflows(): Promise<WorkflowType[]> {

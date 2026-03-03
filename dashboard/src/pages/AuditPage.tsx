@@ -3,7 +3,7 @@ import { ScrollText, Download, ChevronDown, ChevronRight, CheckCircle2, XCircle 
 import { format } from 'date-fns'
 import clsx from 'clsx'
 import { usePhantomStore } from '../store/phantomStore'
-import type { RiskLevel, AuditEntry } from '../types'
+import type { RiskLevel } from '../types'
 
 const RISK_STYLES: Record<RiskLevel, string> = {
   low: 'text-phantom-success',

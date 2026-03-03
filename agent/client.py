@@ -85,11 +85,14 @@ class PhantomClient:
                 msg_type = msg.get("type", "")
                 payload = msg.get("payload", {})
 
+                logger.info(f"[CLIENT←WS] Received message type='{msg_type}'")
+
                 if msg_type == "action" and self._on_action:
                     await self._on_action(payload)
 
                 elif msg_type == "audio" and self._on_audio:
                     audio_b64 = payload.get("data", "")
+                    logger.info(f"[CLIENT←WS] Audio message: audio_b64 len={len(audio_b64)}, _on_audio set={self._on_audio is not None}")
                     if audio_b64:
                         audio_bytes = base64.b64decode(audio_b64)
                         await self._on_audio(audio_bytes)
@@ -104,12 +107,12 @@ class PhantomClient:
                     await self._on_session_state(payload)
 
                 else:
-                    logger.debug(f"Unhandled message type: {msg_type}")
+                    logger.info(f"[CLIENT←WS] Unhandled message type: '{msg_type}' (handler set: {bool(getattr(self, f'_on_{msg_type}', None))})")
 
             except json.JSONDecodeError:
                 logger.warning("Invalid JSON from backend")
             except Exception as e:
-                logger.error(f"Error handling message: {e}")
+                logger.error(f"Error handling message: {e}", exc_info=True)
 
     async def _send(self, msg_type: str, payload: dict[str, Any]) -> None:
         if self._ws and not self._ws.closed:

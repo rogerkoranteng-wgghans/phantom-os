@@ -62,49 +62,96 @@ class ScreenCapture:
         self._active_mode = active
         logger.debug(f"ScreenCapture: {'active' if active else 'idle'} mode ({self.fps}fps)")
 
+    def _capture_wayland_fallback(self) -> bytes | None:
+        """Wayland-compatible screen capture via grim (best) or scrot (XWayland fallback)."""
+        import subprocess
+        import shutil
+        import tempfile
+
+        # ── Try grim (native Wayland) ─────────────────────────────────────────
+        if shutil.which("grim"):
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                    tmp = f.name
+                result = subprocess.run(
+                    ["grim", "-t", "png", tmp],
+                    capture_output=True, timeout=3,
+                )
+                if result.returncode == 0:
+                    img = Image.open(tmp)
+                    new_w = int(img.width * self.scale)
+                    new_h = int(img.height * self.scale)
+                    img = img.resize((new_w, new_h), Image.LANCZOS)
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=self.quality, optimize=True)
+                    return buf.getvalue()
+            except Exception as e:
+                logger.debug(f"grim fallback error: {e}")
+
+        # ── Try scrot (XWayland) ──────────────────────────────────────────────
+        if shutil.which("scrot"):
+            try:
+                result = subprocess.run(
+                    ["scrot", "-o", "/tmp/phantom_screen.jpg",
+                     "--quality", str(self.quality)],
+                    capture_output=True, timeout=3,
+                )
+                if result.returncode == 0:
+                    with open("/tmp/phantom_screen.jpg", "rb") as f:
+                        return f.read()
+            except Exception as e:
+                logger.debug(f"scrot fallback error: {e}")
+
+        return None
+
     def capture_frame(self) -> str | None:
         """Capture screen, compress, return base64 JPEG. Returns None if no change."""
+        frame_bytes: bytes | None = None
+
+        # ── Primary: mss (fast, X11) ──────────────────────────────────────────
         try:
             with mss.mss() as sct:
                 screenshot = sct.grab(self._monitor)
                 img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
 
-                # Downscale
                 if self.scale < 1.0:
                     new_w = int(img.width * self.scale)
                     new_h = int(img.height * self.scale)
                     img = img.resize((new_w, new_h), Image.LANCZOS)
 
-                # Compress to JPEG
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG", quality=self.quality, optimize=True)
                 frame_bytes = buf.getvalue()
 
-                # Change detection
-                if self._prev_frame is not None:
-                    change = self.detect_change(self._prev_frame, frame_bytes)
-                    if change < self.change_threshold:
-                        return None  # No significant change
-
-                self._prev_frame = frame_bytes
-                return base64.b64encode(frame_bytes).decode("utf-8")
-
         except Exception as e:
-            # On Wayland, XGetImage is blocked by the compositor. Suppress the
-            # repeated error spam and silently skip the frame instead of flooding
-            # the log. The agent continues running for audio/text commands.
             err_str = str(e)
             if "XGetImage" in err_str or "x_get_image" in err_str.lower():
+                # ── Fallback: Wayland-compatible capture ──────────────────────
                 if not getattr(self, "_wayland_warned", False):
                     logger.warning(
                         "ScreenCapture: XGetImage blocked (Wayland session). "
-                        "Screen frames disabled — switch to an X11 session for full "
-                        "visual context. Audio/text commands still work."
+                        "Trying grim/scrot fallback. "
+                        "For best results: sudo apt install grim"
                     )
                     self._wayland_warned = True
+                frame_bytes = self._capture_wayland_fallback()
+                if frame_bytes is None:
+                    return None  # All methods failed — skip frame
             else:
                 logger.error(f"ScreenCapture.capture_frame error: {e}")
+                return None
+
+        if frame_bytes is None:
             return None
+
+        # Change detection
+        if self._prev_frame is not None:
+            change = self.detect_change(self._prev_frame, frame_bytes)
+            if change < self.change_threshold:
+                return None
+
+        self._prev_frame = frame_bytes
+        return base64.b64encode(frame_bytes).decode("utf-8")
 
     def detect_change(self, prev_frame: bytes, curr_frame: bytes) -> float:
         """Returns fraction of pixels that changed (0.0 - 1.0)."""

@@ -15,6 +15,7 @@ from typing import Any
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
@@ -91,6 +92,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve the built React dashboard if present (populated during Windows build)
+_dashboard_dir = os.path.join(os.path.dirname(__file__), "static", "dashboard")
+if os.path.isdir(_dashboard_dir):
+    app.mount("/dashboard", StaticFiles(directory=_dashboard_dir, html=True), name="dashboard")
+    logger.info(f"Dashboard served from {_dashboard_dir}")
+
 # ─── Routers ─────────────────────────────────────────────────────────────────
 from api.sessions import router as sessions_router
 from api.memory import router as memory_router
@@ -111,8 +118,11 @@ async def health():
 async def _send_ws(ws: WebSocket, msg_type: str, payload: dict[str, Any]) -> None:
     try:
         await ws.send_text(json.dumps({"type": msg_type, "payload": payload}))
-    except Exception:
-        pass
+        if msg_type == "audio":
+            data_len = len(payload.get("data", ""))
+            logger.info(f"[WS→CLIENT] Sent audio message ({data_len} b64 chars)")
+    except Exception as e:
+        logger.error(f"[WS→CLIENT] Failed to send '{msg_type}': {e}")
 
 
 @app.websocket("/ws/{session_id}")

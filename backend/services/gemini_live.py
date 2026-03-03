@@ -18,7 +18,7 @@ from models.schemas import Action
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.0-flash-live-001"
+MODEL = "gemini-2.5-flash-native-audio-latest"
 
 SYSTEM_PROMPT = """You are Phantom OS — an advanced autonomous AI operating system layer with full visibility of the user's screen and the ability to hear their voice in real time.
 
@@ -67,10 +67,7 @@ class GeminiLiveSession:
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable not set")
 
-        self._client = genai.Client(
-            api_key=api_key,
-            http_options={"api_version": "v1alpha"},
-        )
+        self._client = genai.Client(api_key=api_key)
         self._session = None
         self._receive_task: asyncio.Task | None = None
         self._running = False
@@ -80,7 +77,7 @@ class GeminiLiveSession:
 
     async def start(self) -> None:
         config = types.LiveConnectConfig(
-            response_modalities=["AUDIO", "TEXT"],
+            response_modalities=["AUDIO"],
             system_instruction=SYSTEM_PROMPT.format(
                 action_format=action_to_prompt_hint()
             ),
@@ -106,11 +103,10 @@ class GeminiLiveSession:
         if not self._session or not self._running:
             return
         try:
-            await self._session.send(
-                input=types.LiveClientRealtimeInput(
-                    media_chunks=[
-                        types.Blob(mime_type="image/jpeg", data=frame_b64)
-                    ]
+            await self._session.send_realtime_input(
+                video=types.Blob(
+                    mime_type="image/jpeg",
+                    data=base64.b64decode(frame_b64),
                 )
             )
         except Exception as e:
@@ -121,11 +117,10 @@ class GeminiLiveSession:
         if not self._session or not self._running:
             return
         try:
-            await self._session.send(
-                input=types.LiveClientRealtimeInput(
-                    media_chunks=[
-                        types.Blob(mime_type="audio/pcm", data=audio_b64)
-                    ]
+            await self._session.send_realtime_input(
+                audio=types.Blob(
+                    mime_type="audio/pcm;rate=16000",
+                    data=base64.b64decode(audio_b64),
                 )
             )
         except Exception as e:
@@ -136,7 +131,9 @@ class GeminiLiveSession:
         if not self._session or not self._running:
             return
         try:
-            await self._session.send(input=" ", end_of_turn=True)
+            await self._session.send_client_content(
+                turns=[], turn_complete=True
+            )
         except Exception as e:
             logger.error(f"send_end_of_turn error: {e}")
 
@@ -145,40 +142,64 @@ class GeminiLiveSession:
         if not self._session or not self._running:
             return
         try:
-            await self._session.send(input=text, end_of_turn=True)
+            await self._session.send_client_content(
+                turns=[
+                    types.Content(
+                        role="user",
+                        parts=[types.Part(text=text)],
+                    )
+                ],
+                turn_complete=True,
+            )
         except Exception as e:
             logger.error(f"send_text error: {e}")
 
     async def _receive_loop(self) -> None:
         """Background task that reads Gemini responses and dispatches them."""
+        audio_chunks_received = 0
         try:
             async for response in self._session.receive():
                 if not self._running:
                     break
 
-                # Audio response (Gemini's voice)
-                if hasattr(response, "data") and response.data:
-                    await self._on_audio(response.data)
+                server_content = getattr(response, "server_content", None)
+                if not server_content:
+                    logger.debug(f"[GEMINI] Response with no server_content: {type(response)}")
+                    continue
 
-                # Text response
-                if hasattr(response, "text") and response.text:
-                    text = response.text
-                    self._text_buffer += text
-                    await self._on_text(text)
+                model_turn = getattr(server_content, "model_turn", None)
+                if model_turn:
+                    parts = getattr(model_turn, "parts", []) or []
+                    for part in parts:
+                        # Audio response (Gemini's voice)
+                        inline_data = getattr(part, "inline_data", None)
+                        if inline_data and getattr(inline_data, "data", None):
+                            audio_chunks_received += 1
+                            logger.info(
+                                f"[GEMINI] Audio chunk #{audio_chunks_received} received "
+                                f"({len(inline_data.data)} bytes) → forwarding to client"
+                            )
+                            await self._on_audio(inline_data.data)
 
-                    # Try to parse actions from accumulated buffer
-                    actions = parse_gemini_response(self._text_buffer)
-                    for action in actions:
-                        logger.info(
-                            f"Action extracted: {action.action_type} | "
-                            f"risk={action.risk_level} | confidence={action.confidence}"
-                        )
-                        await self._on_action(action)
+                        # Text response (present even in AUDIO-only mode)
+                        text = getattr(part, "text", None)
+                        if text:
+                            logger.info(f"[GEMINI] Text part: {text[:120]!r}")
+                            self._text_buffer += text
+                            await self._on_text(text)
 
-                    # Clear buffer after parsing if we got a complete response
-                    if hasattr(response, "server_content") and response.server_content:
-                        if getattr(response.server_content, "turn_complete", False):
-                            self._text_buffer = ""
+                # Parse actions and clear buffer at turn boundary
+                if getattr(server_content, "turn_complete", False):
+                    logger.info(f"[GEMINI] Turn complete. Buffer length: {len(self._text_buffer)} chars")
+                    if self._text_buffer:
+                        actions = parse_gemini_response(self._text_buffer)
+                        for action in actions:
+                            logger.info(
+                                f"Action extracted: {action.action_type} | "
+                                f"risk={action.risk_level} | confidence={action.confidence}"
+                            )
+                            await self._on_action(action)
+                        self._text_buffer = ""
 
         except asyncio.CancelledError:
             pass

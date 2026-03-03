@@ -1,0 +1,93 @@
+name: Build Windows Installer
+
+on:
+  push:
+    branches: [main]
+    tags:      ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Node / dashboard ──────────────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build React dashboard
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy dashboard into backend static dir
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path backend/static/dashboard | Out-Null
+          Copy-Item -Recurse -Force dashboard/dist/* backend/static/dashboard/
+
+      # ── Python / backend ──────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps + PyInstaller
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Package backend
+        run: |
+          pyinstaller --distpath dist --workpath build_tmp/backend --noconfirm build/specs/backend.spec
+
+      # ── Python / agent ────────────────────────────────────────────────────
+      - name: Install agent deps + PyInstaller
+        working-directory: agent
+        run: |
+          pip install -r requirements.txt pyinstaller
+
+      - name: Package agent
+        run: |
+          pyinstaller --distpath dist --workpath build_tmp/agent --noconfirm build/specs/agent.spec
+
+      # ── Python / launcher ─────────────────────────────────────────────────
+      - name: Install launcher deps + PyInstaller
+        working-directory: launcher
+        run: |
+          pip install -r requirements.txt pyinstaller
+
+      - name: Package launcher
+        run: |
+          pyinstaller --distpath dist --workpath build_tmp/launcher --noconfirm build/specs/launcher.spec
+
+      # ── Inno Setup ────────────────────────────────────────────────────────
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Create installer
+        run: iscc installer\setup.iss
+
+      # ── Upload artifact ───────────────────────────────────────────────────
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhantomOS-Setup
+          path: installer/Output/PhantomOS-Setup.exe
+          retention-days: 30
+
+      # On tagged releases, also publish as a GitHub Release asset
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/Output/PhantomOS-Setup.exe
+          name: "Phantom OS ${{ github.ref_name }}"
+          draft: false
+          prerelease: false

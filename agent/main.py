@@ -218,16 +218,31 @@ async def main() -> None:
         await dispatcher.dispatch(action_dict)
         hud.show_status("LISTENING")
 
+    # Continuous output stream so chunks queue up instead of interrupting each other
+    _audio_stream = None
+    try:
+        import sounddevice as sd
+        import numpy as np
+        _audio_stream = sd.OutputStream(samplerate=24000, channels=1, dtype="float32")
+        _audio_stream.start()
+        logger.info("[PLAYBACK] Audio output stream opened (24kHz mono float32)")
+    except Exception as e:
+        logger.error(f"[PLAYBACK] Could not open audio output stream: {e}")
+
     @client.on_audio
     async def handle_audio_playback(audio_bytes: bytes) -> None:
-        """Play Phantom's voice response."""
+        """Write Phantom's voice into the continuous output stream."""
+        logger.info(f"[PLAYBACK] Received {len(audio_bytes)} bytes of audio from backend")
+        if _audio_stream is None:
+            logger.error("[PLAYBACK] No audio stream — skipping")
+            return
         try:
-            import sounddevice as sd
             import numpy as np
             pcm = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-            sd.play(pcm, samplerate=24000, blocking=False)
+            _audio_stream.write(pcm)
+            logger.info(f"[PLAYBACK] Wrote {len(pcm)} samples to output stream")
         except Exception as e:
-            logger.debug(f"Audio playback error: {e}")
+            logger.error(f"[PLAYBACK] Audio write error: {e}")
 
     @client.on_text
     async def handle_text(text: str) -> None:
@@ -277,6 +292,7 @@ async def main() -> None:
     async def on_audio(audio_b64: str) -> None:
         last_audio_time[0] = time.monotonic()
         screen_capture.set_active_mode(True)
+        logger.debug(f"[MIC] Sending audio chunk to backend ({len(audio_b64)} b64 chars)")
         await client.send_audio(audio_b64)
         hud.show_status("LISTENING")
 
@@ -340,6 +356,9 @@ async def main() -> None:
     await client.disconnect()
     await screen_capture.stop()
     await audio_capture.stop()
+    if _audio_stream:
+        _audio_stream.stop()
+        _audio_stream.close()
     hud.stop()
 
     print("Phantom OS stopped.")

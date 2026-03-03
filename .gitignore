@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+venv/
+venv_build/
+.venv/
+*.egg-info/
+dist/
+build_tmp/
+*.spec.bak
+
+# Node
+node_modules/
+dashboard/dist/
+
+# Backend static (generated during build)
+backend/static/dashboard/
+
+# Environment / secrets
+.env
+*.env
+!installer/config.env.template
+!agent/.env.example
+!backend/.env.example
+
+# PyInstaller output
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/tmp/
+
+# Installer output
+installer/Output/
+
+# Cache
+.cache/
+*.cache

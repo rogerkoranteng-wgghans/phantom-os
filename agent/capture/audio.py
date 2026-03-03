@@ -32,7 +32,7 @@ class AudioCapture:
         self,
         sample_rate: int = SAMPLE_RATE,
         chunk_ms: int = CHUNK_MS,
-        vad_threshold: float = 0.01,  # RMS energy threshold
+        vad_threshold: float = 0.05,  # RMS energy threshold (raised from 0.01 to filter noise)
     ):
         self.sample_rate = sample_rate
         self.chunk_ms = chunk_ms
@@ -53,6 +53,13 @@ class AudioCapture:
         pcm_bytes = audio_data.astype(np.int16).tobytes()
         return base64.b64encode(pcm_bytes).decode("utf-8")
 
+    def _safe_enqueue(self, chunk: np.ndarray) -> None:
+        """Put a chunk on the queue, silently dropping it when full."""
+        try:
+            self._queue.put_nowait(chunk)
+        except asyncio.QueueFull:
+            pass  # Consumer is behind — drop oldest audio chunk
+
     def _sounddevice_callback(
         self, indata: np.ndarray, frames: int, time_info, status
     ) -> None:
@@ -61,12 +68,9 @@ class AudioCapture:
             logger.debug(f"AudioCapture sounddevice status: {status}")
         if self._loop and self._loop.is_running():
             mono = indata[:, 0] if indata.ndim > 1 else indata.flatten()
-            try:
-                self._loop.call_soon_threadsafe(
-                    self._queue.put_nowait, mono.copy()
-                )
-            except asyncio.QueueFull:
-                pass  # Drop if queue full
+            # Use a bound method so QueueFull is caught inside the event-loop
+            # callback, not propagated through asyncio's exception handler.
+            self._loop.call_soon_threadsafe(self._safe_enqueue, mono.copy())
 
     async def start(self, on_audio: Callable[[str], Awaitable[None]]) -> None:
         """Start audio capture. Calls on_audio with base64 PCM chunks."""
@@ -93,12 +97,16 @@ class AudioCapture:
             callback=self._sounddevice_callback,
         )
 
+        chunks_sent = 0
         with stream:
             while self._running:
                 try:
                     chunk = await asyncio.wait_for(self._queue.get(), timeout=0.5)
                     if self.is_speech(chunk):
                         audio_b64 = self.to_base64(chunk)
+                        chunks_sent += 1
+                        if chunks_sent == 1 or chunks_sent % 20 == 0:
+                            logger.info(f"[AUDIO] Speech detected — chunk #{chunks_sent} sent to backend")
                         try:
                             await on_audio(audio_b64)
                         except Exception as e:
