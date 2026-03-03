@@ -42,6 +42,7 @@ english.ApiKeyDesc=Enter your Google Gemini API key. Get one free at https://ais
 [Code]
 var
   ApiKeyPage: TInputQueryWizardPage;
+  BackendPage: TInputQueryWizardPage;
 
 procedure InitializeWizard();
 begin
@@ -51,27 +52,40 @@ begin
     'Required for Phantom OS to work',
     'Enter your Gemini API Key. You can get one for free at aistudio.google.com');
   ApiKeyPage.Add('API Key:', False);
-  // Try to pre-fill from existing config
   ApiKeyPage.Values[0] := '';
+
+  BackendPage := CreateInputQueryPage(
+    ApiKeyPage.ID,
+    'Backend Server',
+    'Where should the agent connect?',
+    'Leave blank to run the backend locally on this PC. ' +
+    'To use a cloud-deployed backend, paste the wss:// URL from your Cloud Run deployment.');
+  BackendPage.Add('Backend URL (wss://... or leave blank for local):', False);
+  BackendPage.Values[0] := '';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  ConfigDir, ConfigFile, ApiKey: String;
+  ConfigDir, ConfigFile, ApiKey, BackendURL: String;
   Lines: TArrayOfString;
 begin
   if CurStep = ssPostInstall then begin
-    ApiKey := ApiKeyPage.Values[0];
-    if ApiKey <> '' then begin
-      ConfigDir := ExpandConstant('{userappdata}\PhantomOS');
-      ForceDirectories(ConfigDir);
-      ConfigFile := ConfigDir + '\config.env';
-      SetArrayLength(Lines, 3);
-      Lines[0] := 'GEMINI_API_KEY=' + ApiKey;
-      Lines[1] := 'REDIS_URL=embedded';
-      Lines[2] := 'GOOGLE_CLOUD_PROJECT=phantom-os';
-      SaveStringsToFile(ConfigFile, Lines, False);
-    end;
+    ApiKey    := ApiKeyPage.Values[0];
+    BackendURL := BackendPage.Values[0];
+
+    ConfigDir := ExpandConstant('{userappdata}\PhantomOS');
+    ForceDirectories(ConfigDir);
+    ConfigFile := ConfigDir + '\config.env';
+
+    SetArrayLength(Lines, 4);
+    Lines[0] := 'GEMINI_API_KEY=' + ApiKey;
+    Lines[1] := 'REDIS_URL=embedded';
+    Lines[2] := 'GOOGLE_CLOUD_PROJECT=phantom-os';
+    if BackendURL <> '' then
+      Lines[3] := 'BACKEND_URL=' + BackendURL
+    else
+      Lines[3] := 'BACKEND_URL=ws://localhost:8000';
+    SaveStringsToFile(ConfigFile, Lines, False);
   end;
 end;
 

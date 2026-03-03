@@ -58,7 +58,7 @@ def wait_for_backend(url: str = "http://localhost:8000/health", timeout: int = 3
     return False
 
 
-def make_tray_icon(stop_event: threading.Event):
+def make_tray_icon(stop_event: threading.Event, dashboard_url: str = "http://localhost:8000/dashboard"):
     """Create and run the system tray icon (blocks until quit)."""
     try:
         import pystray
@@ -75,7 +75,7 @@ def make_tray_icon(stop_event: threading.Event):
             stop_event.set()
 
         menu = pystray.Menu(
-            pystray.MenuItem("Open Dashboard", lambda: webbrowser.open("http://localhost:8000/dashboard")),
+            pystray.MenuItem("Open Dashboard", lambda: webbrowser.open(dashboard_url)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit Phantom OS", on_quit),
         )
@@ -96,6 +96,19 @@ def main() -> None:
     if "GEMINI_API_KEY" in config:
         env["GEMINI_API_KEY"] = config["GEMINI_API_KEY"]
 
+    # Determine backend URL — cloud or local
+    backend_url = config.get("BACKEND_URL", "ws://localhost:8000")
+    env["BACKEND_URL"] = backend_url
+    use_cloud_backend = backend_url.startswith("wss://") or (
+        backend_url.startswith("ws://") and "localhost" not in backend_url
+    )
+
+    # Derive HTTP dashboard URL from the backend WebSocket URL
+    if use_cloud_backend:
+        dashboard_url = backend_url.replace("wss://", "https://").replace("ws://", "http://") + "/dashboard"
+    else:
+        dashboard_url = "http://localhost:8000/dashboard"
+
     # Resolve executables — support both installed (frozen) and dev layouts
     if getattr(sys, "frozen", False):
         backend_exe = str(install_dir / "PhantomBackend" / "PhantomBackend.exe")
@@ -104,28 +117,32 @@ def main() -> None:
         backend_exe = str(install_dir / "backend" / "venv" / "Scripts" / "python.exe")
         agent_exe   = str(install_dir / "agent"   / "venv" / "Scripts" / "python.exe")
 
-    # Start backend
-    if getattr(sys, "frozen", False):
-        backend_cmd = [backend_exe]
+    # Start local backend only if not using a cloud backend
+    backend_proc = None
+    if use_cloud_backend:
+        print(f"Using cloud backend: {backend_url}")
     else:
-        backend_cmd = [backend_exe, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+        if getattr(sys, "frozen", False):
+            backend_cmd = [backend_exe]
+        else:
+            backend_cmd = [backend_exe, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 
-    backend_proc = subprocess.Popen(
-        backend_cmd,
-        env=env,
-        cwd=str(install_dir / ("." if getattr(sys, "frozen", False) else "backend")),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+        backend_proc = subprocess.Popen(
+            backend_cmd,
+            env=env,
+            cwd=str(install_dir / ("." if getattr(sys, "frozen", False) else "backend")),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
-    print("Waiting for Phantom OS backend to start...")
-    if wait_for_backend():
-        print("Backend ready.")
-    else:
-        print("Warning: backend took too long to start.")
+        print("Waiting for Phantom OS backend to start...")
+        if wait_for_backend():
+            print("Backend ready.")
+        else:
+            print("Warning: backend took too long to start.")
 
     # Open dashboard
-    webbrowser.open("http://localhost:8000/dashboard")
+    webbrowser.open(dashboard_url)
 
     # Start agent
     if getattr(sys, "frozen", False):
@@ -144,7 +161,10 @@ def main() -> None:
     def monitor():
         """If either child dies unexpectedly, signal quit."""
         while not stop_event.is_set():
-            if backend_proc.poll() is not None or agent_proc.poll() is not None:
+            if agent_proc.poll() is not None:
+                stop_event.set()
+                break
+            if backend_proc is not None and backend_proc.poll() is not None:
                 stop_event.set()
                 break
             time.sleep(2)
@@ -152,11 +172,12 @@ def main() -> None:
     threading.Thread(target=monitor, daemon=True).start()
 
     try:
-        make_tray_icon(stop_event)
+        make_tray_icon(stop_event, dashboard_url)
     except KeyboardInterrupt:
         pass
     finally:
-        backend_proc.terminate()
+        if backend_proc is not None:
+            backend_proc.terminate()
         agent_proc.terminate()
         print("Phantom OS stopped.")
 
