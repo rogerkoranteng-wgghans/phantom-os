@@ -1,0 +1,14 @@
+websockets==13.0
+mss==9.0.2
+pynput==1.7.7
+sounddevice==0.4.7
+opencv-python==4.10.0.84
+numpy==1.26.4
+Pillow==10.4.0
+pyperclip==1.9.0
+python-dotenv==1.0.1
+
+# NOTE: tkinter is part of the Python standard library but is NOT bundled with
+# python3-minimal on Debian/Ubuntu. If the HUD overlay fails to import tkinter,
+# install it with:
+#   sudo apt-get install python3-tk
