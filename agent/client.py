@@ -58,14 +58,18 @@ class PhantomClient:
                 logger.info(f"Connecting to {self._url}")
                 async with websockets.connect(
                     self._url,
-                    ping_interval=20,
-                    ping_timeout=10,
+                    ping_interval=None,   # Cloud Run handles keepalive; client pings cause timeout
                     max_size=10 * 1024 * 1024,  # 10MB for large frames
                 ) as ws:
                     self._ws = ws
                     self._reconnect_delay = 1.0  # Reset on successful connection
                     logger.info(f"Connected to Phantom OS backend (session: {self.session_id})")
-                    await self._receive_loop()
+                    # Run receive loop and heartbeat concurrently
+                    await asyncio.gather(
+                        self._receive_loop(),
+                        self._heartbeat_loop(),
+                        return_exceptions=True,
+                    )
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(f"Connection closed: {e}")
             except ConnectionRefusedError:
@@ -77,6 +81,13 @@ class PhantomClient:
                 logger.info(f"Reconnecting in {self._reconnect_delay:.1f}s...")
                 await asyncio.sleep(self._reconnect_delay)
                 self._reconnect_delay = min(30.0, self._reconnect_delay * 2)
+
+    async def _heartbeat_loop(self) -> None:
+        """Send application-level heartbeat every 15s to keep Cloud Run WS alive."""
+        while self._ws and not self._ws.closed:
+            await asyncio.sleep(15)
+            if self._ws and not self._ws.closed:
+                await self._send("heartbeat", {})
 
     async def _receive_loop(self) -> None:
         async for raw in self._ws:
