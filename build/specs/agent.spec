@@ -62,7 +62,7 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,
-    icon="../../installer/phantom_icon.ico",
+    icon=None,
 )
 
 coll = COLLECT(
