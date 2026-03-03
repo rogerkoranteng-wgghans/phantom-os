@@ -81,13 +81,6 @@ class GeminiLiveSession:
             system_instruction=SYSTEM_PROMPT.format(
                 action_format=action_to_prompt_hint()
             ),
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name="Charon"  # Deep, calm voice for Phantom
-                    )
-                )
-            ),
         )
 
         self._session_ctx = self._client.aio.live.connect(
@@ -127,15 +120,12 @@ class GeminiLiveSession:
             logger.error(f"send_audio error: {e}")
 
     async def send_end_of_turn(self) -> None:
-        """Signal end of user turn to trigger Gemini response."""
-        if not self._session or not self._running:
-            return
-        try:
-            await self._session.send_client_content(
-                turns=[], turn_complete=True
-            )
-        except Exception as e:
-            logger.error(f"send_end_of_turn error: {e}")
+        """No-op: native audio model uses built-in VAD for turn detection.
+        Sending send_client_content(turns=[], turn_complete=True) causes a 1007
+        invalid argument error on gemini-2.5-flash-native-audio-latest.
+        The model auto-detects end of speech and responds via its built-in VAD.
+        """
+        pass
 
     async def send_text(self, text: str) -> None:
         """Send a text message (for system notifications to Gemini)."""
