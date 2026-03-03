@@ -9,7 +9,7 @@
 #define AppExeName   "PhantomOS.exe"
 
 [Setup]
-AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -93,7 +93,7 @@ Source: "..\dist\PhantomAgent\*";   DestDir: "{app}\PhantomAgent";   Flags: igno
 Source: "config.env.template";     DestDir: "{app}"; DestName: "config.env.template"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#AppName}";                         Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
+Name: "{group}\{#AppName}";                         Filename: "{app}\{#AppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#AppName}}";   Filename: "{uninstallexe}"
 Name: "{commondesktop}\{#AppName}";                 Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 Name: "{userstartup}\{#AppName}";                   Filename: "{app}\{#AppExeName}"; Tasks: startupicon

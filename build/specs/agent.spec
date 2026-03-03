@@ -3,17 +3,20 @@
 PyInstaller spec for PhantomAgent.exe
 Build from repo root:  pyinstaller build/specs/agent.spec
 """
+import os
 
 block_cipher = None
 
+ROOT = os.path.abspath(os.path.join(SPECPATH, "..", ".."))
+
 a = Analysis(
-    ["../../agent/main.py"],
-    pathex=["../../agent"],
+    [os.path.join(ROOT, "agent", "main.py")],
+    pathex=[os.path.join(ROOT, "agent")],
     binaries=[],
     datas=[
-        ("../../agent/capture",  "capture"),
-        ("../../agent/executor", "executor"),
-        ("../../agent/overlay",  "overlay"),
+        (os.path.join(ROOT, "agent", "capture"),  "capture"),
+        (os.path.join(ROOT, "agent", "executor"), "executor"),
+        (os.path.join(ROOT, "agent", "overlay"),  "overlay"),
     ],
     hiddenimports=[
         "sounddevice",
@@ -23,7 +26,9 @@ a = Analysis(
         "mss.windows",
         "pynput",
         "pynput.keyboard",
+        "pynput.keyboard._win32",
         "pynput.mouse",
+        "pynput.mouse._win32",
         "PIL",
         "PIL.Image",
         "websockets",

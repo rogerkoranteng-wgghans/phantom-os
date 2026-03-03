@@ -7,23 +7,29 @@ import os
 
 block_cipher = None
 
+# SPECPATH is the directory containing this spec file (build/specs/)
+# Go up two levels to reach the repo root
+ROOT = os.path.abspath(os.path.join(SPECPATH, "..", ".."))
+
 # Include the built dashboard static files
-dashboard_src = os.path.join("..", "..", "backend", "static", "dashboard")
+dashboard_src = os.path.join(ROOT, "backend", "static", "dashboard")
 datas = []
 if os.path.isdir(dashboard_src):
-    datas.append((dashboard_src, "static/dashboard"))
+    datas.append((dashboard_src, os.path.join("static", "dashboard")))
+else:
+    print(f"WARNING: Dashboard not found at {dashboard_src} — skipping")
 
-# Include agent/api/models/services directories as packages
+# Include backend source directories
 datas += [
-    ("../../backend/agents",   "agents"),
-    ("../../backend/api",      "api"),
-    ("../../backend/models",   "models"),
-    ("../../backend/services", "services"),
+    (os.path.join(ROOT, "backend", "agents"),   "agents"),
+    (os.path.join(ROOT, "backend", "api"),      "api"),
+    (os.path.join(ROOT, "backend", "models"),   "models"),
+    (os.path.join(ROOT, "backend", "services"), "services"),
 ]
 
 a = Analysis(
-    ["../../backend/main.py"],
-    pathex=["../../backend"],
+    [os.path.join(ROOT, "backend", "main.py")],
+    pathex=[os.path.join(ROOT, "backend")],
     binaries=[],
     datas=datas,
     hiddenimports=[

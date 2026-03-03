@@ -3,12 +3,15 @@
 PyInstaller spec for PhantomOS.exe — the Windows launcher / tray app.
 Build from repo root:  pyinstaller build/specs/launcher.spec
 """
+import os
 
 block_cipher = None
 
+ROOT = os.path.abspath(os.path.join(SPECPATH, "..", ".."))
+
 a = Analysis(
-    ["../../launcher/main.py"],
-    pathex=["../../launcher"],
+    [os.path.join(ROOT, "launcher", "main.py")],
+    pathex=[os.path.join(ROOT, "launcher")],
     binaries=[],
     datas=[],
     hiddenimports=[
@@ -41,7 +44,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,         # no console window — it's a tray app
+    console=False,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
