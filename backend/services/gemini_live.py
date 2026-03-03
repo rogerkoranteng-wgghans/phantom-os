@@ -157,20 +157,35 @@ class GeminiLiveSession:
     async def _receive_loop(self) -> None:
         """Background task that reads Gemini responses and dispatches them."""
         audio_chunks_received = 0
+        response_count = 0
         try:
             async for response in self._session.receive():
                 if not self._running:
                     break
 
+                response_count += 1
+                # Log every response at INFO level so we can see what Gemini sends
+                logger.info(f"[GEMINI] Response #{response_count}: type={type(response).__name__} attrs={[a for a in dir(response) if not a.startswith('_')]}")
+
                 server_content = getattr(response, "server_content", None)
                 if not server_content:
-                    logger.debug(f"[GEMINI] Response with no server_content: {type(response)}")
+                    # Check for other top-level fields (tool_call, go_away, etc.)
+                    for attr in ("tool_call", "go_away", "setup_complete", "usage_metadata"):
+                        val = getattr(response, attr, None)
+                        if val:
+                            logger.info(f"[GEMINI] Non-content field '{attr}': {val}")
                     continue
+
+                logger.info(f"[GEMINI] server_content attrs: {[a for a in dir(server_content) if not a.startswith('_')]}")
 
                 model_turn = getattr(server_content, "model_turn", None)
                 if model_turn:
                     parts = getattr(model_turn, "parts", []) or []
-                    for part in parts:
+                    logger.info(f"[GEMINI] model_turn has {len(parts)} parts")
+                    for i, part in enumerate(parts):
+                        part_attrs = [a for a in dir(part) if not a.startswith('_')]
+                        logger.info(f"[GEMINI] part[{i}] attrs={part_attrs}")
+
                         # Audio response (Gemini's voice)
                         inline_data = getattr(part, "inline_data", None)
                         if inline_data and getattr(inline_data, "data", None):
@@ -187,6 +202,8 @@ class GeminiLiveSession:
                             logger.info(f"[GEMINI] Text part: {text[:120]!r}")
                             self._text_buffer += text
                             await self._on_text(text)
+                else:
+                    logger.info(f"[GEMINI] No model_turn. turn_complete={getattr(server_content, 'turn_complete', None)}")
 
                 # Parse actions and clear buffer at turn boundary
                 if getattr(server_content, "turn_complete", False):
@@ -205,7 +222,7 @@ class GeminiLiveSession:
             pass
         except Exception as e:
             if self._running:
-                logger.error(f"GeminiLive receive_loop error: {e}")
+                logger.error(f"GeminiLive receive_loop error: {e}", exc_info=True)
 
     async def stop(self) -> None:
         self._running = False
