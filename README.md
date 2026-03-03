@@ -40,7 +40,7 @@ Qualifies for: **Live Agents** category + **UI Navigator** category.
 User voice → Desktop Agent (mic capture)
            → WebSocket (audio chunks)
            → Backend (Gemini Live session)
-           → Gemini 2.0 Flash Live (multimodal reasoning)
+           → Gemini 2.5 Flash Native Audio (multimodal reasoning)
            → Action JSON → Safety Agent → Redis queue
            → WebSocket → Desktop Agent executes action
            → Screen capture → Backend → Gemini (visual feedback loop)
@@ -225,7 +225,7 @@ Phantom remembers your workflows, preferences, and past tasks using Firestore. E
 
 ## Tech Stack
 
-- **Gemini 2.0 Flash Live** (`gemini-2.0-flash-live-001`) — real-time audio + video streaming
+- **Gemini 2.5 Flash Native Audio** (`gemini-2.5-flash-native-audio-latest`) — real-time native audio + video streaming
 - **Google ADK** — multi-agent orchestration
 - **Google Cloud Run** — backend deployment
 - **Firestore** — long-term memory
